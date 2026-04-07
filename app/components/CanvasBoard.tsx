@@ -1,42 +1,42 @@
 "use client";
 
-import {
-  animate,
-  motion,
-  useMotionTemplate,
-  useMotionValue
-} from "framer-motion";
+import Image from "next/image";
+import { animate, motion, useMotionTemplate, useMotionValue } from "framer-motion";
 import { useRef, useState } from "react";
 import type { PointerEvent } from "react";
 
 const heroStickers = [
   {
     id: "sticker-b-laptop",
-    src: "/images/img2.png",
+    src: "/images/img2.webp",
     position: { x: -360, y: -280 },
     rotation: "-6deg",
-    width: 360
+    width: 360,
+    priority: true
   },
   {
     id: "sticker-d-hairtuck",
-    src: "/images/img4.png",
+    src: "/images/img4.webp",
     position: { x: 130, y: -280 },
     rotation: "15deg",
-    width: 360
+    width: 360,
+    priority: true
   },
   {
     id: "sticker-a-hello",
-    src: "/images/img1.png",
+    src: "/images/img1.webp",
     position: { x: 110, y: 10 },
     rotation: "-4deg",
-    width: 340
+    width: 340,
+    priority: true
   },
   {
     id: "sticker-c-glasses",
-    src: "/images/img3.png",
+    src: "/images/img3.webp",
     position: { x: -450, y: -20 },
     rotation: "6deg",
-    width: 380
+    width: 380,
+    priority: false
   }
 ] as const;
 
@@ -55,7 +55,7 @@ const cardStacks = [
     id: "projects",
     title: "Projects",
     tags: ["Web dev", "AI/ML", "Side Projects"],
-    thumbnail: "/images/img4.png",
+    thumbnail: "/images/img4.webp",
     position: { x: -620, y: -70 },
     rotation: "-3deg",
     stackCount: 4
@@ -64,7 +64,7 @@ const cardStacks = [
     id: "blogging",
     title: "Blogging",
     tags: ["tech", "poetry", "random"],
-    thumbnail: "/images/img1.png",
+    thumbnail: "/images/img1.webp",
     position: { x: 420, y: -290 },
     rotation: "5deg",
     stackCount: 4
@@ -74,49 +74,49 @@ const cardStacks = [
 const extraStickers = [
   {
     id: "extra-6",
-    src: "/images/img6.png",
+    src: "/images/img6.webp",
     position: { x: -330, y: -50 },
     rotation: "-54deg",
     width: 220
   },
   {
     id: "extra-7",
-    src: "/images/img7.png",
+    src: "/images/img7.webp",
     position: { x: -340, y: -270 },
     rotation: "4deg",
     width: 200
   },
   // {
   //   id: "extra-8",
-  //   src: "/images/img8.png",
+  //   src: "/images/img8.webp",
   //   position: { x: 470, y: -120 },
   //   rotation: "-3deg",
   //   width: 280
   // },
   {
     id: "extra-9",
-    src: "/images/img9.png",
+    src: "/images/img9.webp",
     position: { x: -690, y: -170 },
     rotation: "140deg",
     width: 210
   },
   {
     id: "extra-10",
-    src: "/images/img10.png",
+    src: "/images/img10.webp",
     position: { x: 60, y: -220 },
     rotation: "-5deg",
     width: 220
   },
   {
     id: "extra-11",
-    src: "/images/img11.png",
+    src: "/images/img11.webp",
     position: { x: 150, y: -40 },
     rotation: "7deg",
     width: 200
   },
   {
     id: "extra-12",
-    src: "/images/img12.png",
+    src: "/images/img12.webp",
     position: { x: -450, y: -240 },
     rotation: "-170deg",
     width: 230
@@ -126,9 +126,11 @@ const extraStickers = [
 export default function CanvasBoard() {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const bgPosition = useMotionTemplate`${x}px ${y}px`;
+  const worldTransform = useMotionTemplate`translate3d(${x}px, ${y}px, 0)`;
   const [isDragging, setIsDragging] = useState(false);
   const lastPoint = useRef({ x: 0, y: 0, time: 0 });
+  const pendingPoint = useRef({ x: 0, y: 0, time: 0, active: false });
+  const rafId = useRef<number | null>(null);
   const velocity = useRef({ x: 0, y: 0 });
   const xAnimation = useRef<ReturnType<typeof animate> | null>(null);
   const yAnimation = useRef<ReturnType<typeof animate> | null>(null);
@@ -147,13 +149,20 @@ export default function CanvasBoard() {
       y: event.clientY,
       time: performance.now()
     };
+    pendingPoint.current = {
+      x: event.clientX,
+      y: event.clientY,
+      time: performance.now(),
+      active: false
+    };
   };
 
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!isDragging) return;
+  const flushPointerMove = () => {
+    rafId.current = null;
+    if (!pendingPoint.current.active) return;
     const now = performance.now();
-    const dx = event.clientX - lastPoint.current.x;
-    const dy = event.clientY - lastPoint.current.y;
+    const dx = pendingPoint.current.x - lastPoint.current.x;
+    const dy = pendingPoint.current.y - lastPoint.current.y;
     const dt = Math.max(now - lastPoint.current.time, 16);
 
     x.set(x.get() + dx);
@@ -164,12 +173,35 @@ export default function CanvasBoard() {
       y: (dy / dt) * 1000
     };
 
-    lastPoint.current = { x: event.clientX, y: event.clientY, time: now };
+    lastPoint.current = {
+      x: pendingPoint.current.x,
+      y: pendingPoint.current.y,
+      time: now
+    };
+    pendingPoint.current.active = false;
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    pendingPoint.current = {
+      x: event.clientX,
+      y: event.clientY,
+      time: performance.now(),
+      active: true
+    };
+    if (rafId.current == null) {
+      rafId.current = requestAnimationFrame(flushPointerMove);
+    }
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     if (!isDragging) return;
     setIsDragging(false);
+    if (rafId.current != null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    flushPointerMove();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -207,12 +239,12 @@ export default function CanvasBoard() {
         onPointerLeave={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <motion.div
-          className="absolute inset-0 dot-grid"
-          style={{ backgroundPosition: bgPosition }}
-        />
+        <div className="absolute inset-0 dot-grid" />
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <motion.div className="relative h-0 w-0" style={{ x, y }}>
+          <motion.div
+            className="relative h-0 w-0 will-change-transform"
+            style={{ transform: worldTransform }}
+          >
             <div className="absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 w-[620px] text-center">
               <p className="text-[11px] uppercase tracking-[0.3em] text-[#6d6a63]">
                 Aditi Singh - Portfolio
@@ -233,13 +265,20 @@ export default function CanvasBoard() {
                 style={{
                   transform: `translate(${sticker.position.x}px, ${sticker.position.y}px) rotate(${sticker.rotation})`,
                   width: `${sticker.width}px`,
-                  height: `${sticker.width}px`,
-                  backgroundImage: `url(${sticker.src})`,
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "contain"
+                  height: `${sticker.width}px`
                 }}
-              />
+              >
+                <div className="relative h-full w-full">
+                  <Image
+                    src={sticker.src}
+                    alt={sticker.id}
+                    fill
+                    priority={Boolean(sticker.priority)}
+                    sizes="(max-width: 768px) 180px, 360px"
+                    style={{ objectFit: "contain" }}
+                  />
+                </div>
+              </div>
             ))}
 
             {extraStickers.map((sticker) => (
@@ -249,19 +288,25 @@ export default function CanvasBoard() {
                 style={{
                   transform: `translate(${sticker.position.x}px, ${sticker.position.y}px) rotate(${sticker.rotation})`,
                   width: `${sticker.width}px`,
-                  height: `${sticker.width}px`,
-                  backgroundImage: `url(${sticker.src})`,
-                  backgroundRepeat: "no-repeat",
-                  backgroundPosition: "center",
-                  backgroundSize: "contain"
+                  height: `${sticker.width}px`
                 }}
-              />
+              >
+                <div className="relative h-full w-full">
+                  <Image
+                    src={sticker.src}
+                    alt={sticker.id}
+                    fill
+                    sizes="(max-width: 768px) 160px, 260px"
+                    style={{ objectFit: "contain" }}
+                  />
+                </div>
+              </div>
             ))}
 
             {cardStacks.map((stack) => (
               <div
                 key={stack.id}
-                className="absolute left-0 top-0 z-15 group"
+                className="absolute left-0 top-0 z-20 group"
                 style={{
                   transform: `translate(${stack.position.x}px, ${stack.position.y}px) rotate(${stack.rotation})`
                 }}
@@ -282,15 +327,13 @@ export default function CanvasBoard() {
                     );
                   })}
                   <div className="relative h-[230px] w-[220px] rounded-[24px] bg-white shadow-sm transition-transform duration-300 group-hover:-translate-y-1 group-hover:shadow-md">
-                    <div className="h-[140px] w-full overflow-hidden rounded-[18px]">
-                      <div
-                        className="h-full w-full"
-                        style={{
-                          backgroundImage: `url(${stack.thumbnail})`,
-                          backgroundPosition: "center",
-                          backgroundSize: "cover",
-                          backgroundRepeat: "no-repeat"
-                        }}
+                    <div className="relative h-[140px] w-full overflow-hidden rounded-[18px]">
+                      <Image
+                        src={stack.thumbnail}
+                        alt={stack.title}
+                        fill
+                        sizes="(max-width: 768px) 200px, 220px"
+                        style={{ objectFit: "cover" }}
                       />
                     </div>
                     <div className="mt-3 text-[14px] font-semibold text-[#191917]">
@@ -338,15 +381,15 @@ export default function CanvasBoard() {
               <div className="w-[280px] rounded-[28px] bg-[#6ee7a8] px-5 py-5 text-[#113321] shadow-lg">
                 <h3 className="text-[18px] font-semibold">Hola, I&apos;m Aditi</h3>
                 <div className="mt-3 h-[140px] w-full overflow-hidden rounded-[18px] bg-white/60">
-                  <div
-                    className="h-full w-full"
-                    style={{
-                      backgroundImage: "url(/images/img5.jpeg)",
-                      backgroundPosition: "center",
-                      backgroundSize: "cover",
-                      backgroundRepeat: "no-repeat"
-                    }}
-                  />
+                  <div className="relative h-full w-full">
+                    <Image
+                      src="/images/img5.webp"
+                      alt="Aditi profile"
+                      fill
+                      sizes="(max-width: 768px) 240px, 280px"
+                      style={{ objectFit: "cover" }}
+                    />
+                  </div>
                 </div>
                 <div className="mt-3 text-[11px] font-medium text-[#1c3a2a]">
                   Get to know me →
